@@ -1,0 +1,245 @@
+// Construction Management System (CMS) — Prisma Schema for Sri Lanka
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  PROJECT_MANAGER
+  SITE_SUPERVISOR
+  LABOUR_OFFICER
+  ACCOUNTANT
+  STORE_KEEPER
+  STAFF
+}
+
+enum ProjectStage {
+  TENDER
+  AWARDED
+  PLANNING
+  IN_PROGRESS
+  PUNCH_LIST
+  HANDOVER
+  COMPLETED
+  ON_HOLD
+}
+
+enum MaterialCategory {
+  CEMENT_CONCRETE
+  STEEL_REINFORCEMENT
+  BRICKS_MASONRY
+  TIMBER_ROOFING
+  ELECTRICAL
+  PLUMBING_SANITARY
+  FINISHING
+  HARDWARE
+  TOOLS_EQUIPMENT
+  FUEL_LUBRICANTS
+}
+
+enum SkillTrade {
+  MASON
+  CARPENTER
+  BAR_BENDER
+  ELECTRICIAN
+  PLUMBER
+  PAINTER
+  HELPER
+}
+
+enum WorkerCategory {
+  SKILLED
+  SEMI_SKILLED
+  UNSKILLED
+  SUBCONTRACTOR
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LEAVE
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  RECEIVED
+  REJECTED
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  role         Role
+  phone        String
+  nic          String    @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  pmProjects         Project[]        @relation("ProjectPM")
+  supervisorProjects Project[]        @relation("ProjectSupervisor")
+  approvedPOs        PurchaseOrder[]  @relation("POApprover")
+
+  @@map("users")
+}
+
+model Project {
+  id                   String       @id @default(uuid())
+  name                 String
+  refNumber            String       @unique
+  clientName           String
+  siteAddress          String
+  contractValueLKR     Float
+  startDate            DateTime
+  targetCompletionDate DateTime
+  stage                ProjectStage @default(PLANNING)
+  pmId                 String
+  supervisorId         String
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  pm         User            @relation("ProjectPM", fields: [pmId], references: [id])
+  supervisor User            @relation("ProjectSupervisor", fields: [supervisorId], references: [id])
+  milestones Milestone[]
+  dailyLogs  DailySiteLog[]
+  pos        PurchaseOrder[]
+  attendance Attendance[]
+
+  @@map("projects")
+}
+
+model Milestone {
+  id                   String   @id @default(uuid())
+  projectId            String
+  title                String
+  targetDate           DateTime
+  completionPercentage Float    @default(0)
+  status               String   @default("PENDING")
+  assignedTo           String
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("milestones")
+}
+
+model DailySiteLog {
+  id                String   @id @default(uuid())
+  projectId         String
+  date              DateTime @default(now())
+  weatherConditions String
+  labourCount       Int
+  workCompleted     String
+  materialsUsed     String
+  issuesEncountered String?
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("daily_site_logs")
+}
+
+model MaterialItem {
+  id                   String           @id @default(uuid())
+  sku                  String           @unique
+  name                 String
+  category             MaterialCategory
+  unitOfMeasure        String
+  currentStock         Float            @default(0)
+  minStockLevel        Float            @default(10)
+  lastPurchasePriceLKR Float
+  avgCostLKR           Float
+
+  poItems PurchaseOrderItem[]
+
+  @@map("material_items")
+}
+
+model PurchaseOrder {
+  id              String   @id @default(uuid())
+  poNumber        String   @unique
+  supplierName    String
+  projectId       String
+  totalAmountLKR  Float
+  status          POStatus @default(DRAFT)
+  approvedByUserId String?
+  createdAt       DateTime @default(now())
+
+  project    Project             @relation(fields: [projectId], references: [id])
+  approver   User?               @relation("POApprover", fields: [approvedByUserId], references: [id])
+  items      PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id             String @id @default(uuid())
+  poId           String
+  materialId     String
+  quantity       Float
+  unitPriceLKR   Float
+
+  po       PurchaseOrder @relation(fields: [poId], references: [id])
+  material MaterialItem  @relation(fields: [materialId], references: [id])
+
+  @@map("purchase_order_items")
+}
+
+model Worker {
+  id                 String         @id @default(uuid())
+  fullName           String
+  nic                String         @unique
+  category           WorkerCategory
+  trade              SkillTrade
+  dailyWageLKR       Float
+  epfNumber          String?
+  bankAccountDetails String?
+
+  attendance Attendance[]
+  payrolls   Payroll[]
+
+  @@map("workers")
+}
+
+model Attendance {
+  id              String           @id @default(uuid())
+  workerId        String
+  projectId       String
+  date            DateTime         @default(now())
+  status          AttendanceStatus @default(PRESENT)
+  overtimeHours   Float            @default(0)
+  isSundayHoliday Boolean          @default(false)
+
+  worker  Worker  @relation(fields: [workerId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("attendance")
+}
+
+model Payroll {
+  id                  String   @id @default(uuid())
+  workerId            String
+  monthYear           String   // e.g. "2026-06"
+  basicSalaryLKR      Float
+  overtimeLKR         Float
+  allowancesLKR       Float
+  grossPayLKR         Float
+  epfEmployeeLKR      Float    // 8%
+  epfEmployerLKR      Float    // 12%
+  etfEmployerLKR      Float    // 3%
+  payeTaxLKR          Float    // Progressive IRD Tax
+  advanceDeductionLKR Float    @default(0)
+  netPayLKR           Float
+  createdAt           DateTime @default(now())
+
+  worker Worker @relation(fields: [workerId], references: [id])
+
+  @@map("payrolls")
+}
