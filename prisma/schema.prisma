@@ -8,6 +8,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ENUMS
 enum Role {
   OWNER
   PROJECT_MANAGER
@@ -74,117 +75,251 @@ enum POStatus {
   REJECTED
 }
 
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+}
+
+enum PaymentTransactionType {
+  INCOME
+  EXPENSE
+  REFUND
+  OTHER
+}
+
+enum SalaryAdvanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RECOVERED
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  PROCESSING
+  COMPLETED
+  APPROVED
+}
+
+// USER
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
+  id           String   @id @default(uuid())
+  email        String   @unique
   passwordHash String
   fullName     String
   role         Role
   phone        String
-  nic          String    @unique
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  nic          String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  pmProjects         Project[]        @relation("ProjectPM")
-  supervisorProjects Project[]        @relation("ProjectSupervisor")
-  approvedPOs        PurchaseOrder[]  @relation("POApprover")
+  pmProjects         Project[] @relation("ProjectPM")
+  supervisorProjects Project[] @relation("ProjectSupervisor")
+
+  assignedTasks      ProjectTask[] @relation("TaskAssignee")
+  assignedMilestones Milestone[]   @relation("MilestoneAssignee")
+
+  submittedDailyLogs DailySiteLog[] @relation("DailyLogSubmitter")
+
+  requestedPOs PurchaseOrder[] @relation("PORequester")
+  approvedPOs  PurchaseOrder[] @relation("POApprover")
+
+  processedPayrollRuns PayrollRun[] @relation("PayrollProcessor")
 
   @@map("users")
 }
 
+// CLIENT
+model Client {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+
+  @@map("clients")
+}
+
+// PROJECT
 model Project {
-  id                   String       @id @default(uuid())
-  name                 String
-  refNumber            String       @unique
-  clientName           String
+  id        String @id @default(uuid())
+  name      String
+  refNumber String @unique
+
+  clientId String
+
   siteAddress          String
   contractValueLKR     Float
   startDate            DateTime
   targetCompletionDate DateTime
-  stage                ProjectStage @default(PLANNING)
-  pmId                 String
-  supervisorId         String
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
 
-  pm         User            @relation("ProjectPM", fields: [pmId], references: [id])
-  supervisor User            @relation("ProjectSupervisor", fields: [supervisorId], references: [id])
+  stage ProjectStage @default(PLANNING)
+
+  pmId         String
+  supervisorId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  client     Client @relation(fields: [clientId], references: [id])
+  pm         User   @relation("ProjectPM", fields: [pmId], references: [id])
+  supervisor User   @relation("ProjectSupervisor", fields: [supervisorId], references: [id])
+
   milestones Milestone[]
+  tasks      ProjectTask[]
   dailyLogs  DailySiteLog[]
-  pos        PurchaseOrder[]
+
+  purchaseOrders PurchaseOrder[]
+
   attendance Attendance[]
+
+  costCodes CostCode[]
+
+  paymentTransactions PaymentTransaction[]
 
   @@map("projects")
 }
 
+// PROJECT TASK
+model ProjectTask {
+  id           String  @id @default(uuid())
+  projectId    String
+  assignedToId String?
+
+  title       String
+  description String?
+  status      TaskStatus @default(PENDING)
+
+  startDate   DateTime?
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project    Project @relation(fields: [projectId], references: [id])
+  assignedTo User?   @relation("TaskAssignee", fields: [assignedToId], references: [id])
+
+  @@map("project_tasks")
+}
+
+// MILESTONE
 model Milestone {
-  id                   String   @id @default(uuid())
-  projectId            String
+  id           String  @id @default(uuid())
+  projectId    String
+  assignedToId String?
+
   title                String
   targetDate           DateTime
   completionPercentage Float    @default(0)
   status               String   @default("PENDING")
-  assignedTo           String
 
-  project Project @relation(fields: [projectId], references: [id])
+  project    Project @relation(fields: [projectId], references: [id])
+  assignedTo User?   @relation("MilestoneAssignee", fields: [assignedToId], references: [id])
 
   @@map("milestones")
 }
 
+// DAILY SITE LOG
 model DailySiteLog {
-  id                String   @id @default(uuid())
-  projectId         String
+  id            String  @id @default(uuid())
+  projectId     String
+  submittedById String?
+
   date              DateTime @default(now())
   weatherConditions String
   labourCount       Int
   workCompleted     String
-  materialsUsed     String
   issuesEncountered String?
 
-  project Project @relation(fields: [projectId], references: [id])
+  project     Project @relation(fields: [projectId], references: [id])
+  submittedBy User?   @relation("DailyLogSubmitter", fields: [submittedById], references: [id])
+
+  materialUsages DailySiteLogMaterial[]
 
   @@map("daily_site_logs")
 }
 
+// DAILY SITE LOG - MATERIAL USAGE
+model DailySiteLogMaterial {
+  id             String @id @default(uuid())
+  dailySiteLogId String
+  materialId     String
+
+  quantity      Float
+  unitOfMeasure String?
+
+  dailySiteLog DailySiteLog @relation(fields: [dailySiteLogId], references: [id])
+  material     MaterialItem @relation(fields: [materialId], references: [id])
+
+  @@unique([dailySiteLogId, materialId])
+  @@map("daily_site_log_materials")
+}
+
+// MATERIAL ITEM
 model MaterialItem {
-  id                   String           @id @default(uuid())
-  sku                  String           @unique
-  name                 String
-  category             MaterialCategory
-  unitOfMeasure        String
-  currentStock         Float            @default(0)
-  minStockLevel        Float            @default(10)
+  id            String           @id @default(uuid())
+  sku           String           @unique
+  name          String
+  category      MaterialCategory
+  unitOfMeasure String
+
+  currentStock  Float @default(0)
+  minStockLevel Float @default(10)
+
   lastPurchasePriceLKR Float
   avgCostLKR           Float
 
   poItems PurchaseOrderItem[]
 
+  dailySiteLogUsages DailySiteLogMaterial[]
+
   @@map("material_items")
 }
 
+// PURCHASE ORDER
 model PurchaseOrder {
-  id              String   @id @default(uuid())
-  poNumber        String   @unique
-  supplierName    String
-  projectId       String
-  totalAmountLKR  Float
-  status          POStatus @default(DRAFT)
-  approvedByUserId String?
-  createdAt       DateTime @default(now())
+  id       String @id @default(uuid())
+  poNumber String @unique
 
-  project    Project             @relation(fields: [projectId], references: [id])
-  approver   User?               @relation("POApprover", fields: [approvedByUserId], references: [id])
-  items      PurchaseOrderItem[]
+  supplierName String
+
+  projectId String
+
+  requesterId      String?
+  approvedByUserId String?
+
+  totalAmountLKR Float
+  status         POStatus @default(DRAFT)
+
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  requester User? @relation("PORequester", fields: [requesterId], references: [id])
+
+  approver User? @relation("POApprover", fields: [approvedByUserId], references: [id])
+
+  items PurchaseOrderItem[]
 
   @@map("purchase_orders")
 }
 
+// PURCHASE ORDER ITEM
 model PurchaseOrderItem {
-  id             String @id @default(uuid())
-  poId           String
-  materialId     String
-  quantity       Float
-  unitPriceLKR   Float
+  id         String @id @default(uuid())
+  poId       String
+  materialId String
+
+  quantity     Float
+  unitPriceLKR Float
 
   po       PurchaseOrder @relation(fields: [poId], references: [id])
   material MaterialItem  @relation(fields: [materialId], references: [id])
@@ -192,54 +327,188 @@ model PurchaseOrderItem {
   @@map("purchase_order_items")
 }
 
+// COST CODE
+model CostCode {
+  id        String @id @default(uuid())
+  projectId String
+
+  code        String
+  name        String
+  description String?
+
+  budgetLKR Float?
+
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  paymentTransactions PaymentTransaction[]
+
+  @@unique([projectId, code])
+  @@map("cost_codes")
+}
+
+// PAYMENT TRANSACTION
+model PaymentTransaction {
+  id String @id @default(uuid())
+
+  projectId  String
+  costCodeId String?
+
+  transactionNo String? @unique
+
+  transactionType PaymentTransactionType
+
+  amountLKR       Float
+  transactionDate DateTime
+
+  description String?
+
+  createdAt DateTime @default(now())
+
+  project  Project   @relation(fields: [projectId], references: [id])
+  costCode CostCode? @relation(fields: [costCodeId], references: [id])
+
+  @@map("payment_transactions")
+}
+
+// WORKER
 model Worker {
-  id                 String         @id @default(uuid())
-  fullName           String
-  nic                String         @unique
-  category           WorkerCategory
-  trade              SkillTrade
-  dailyWageLKR       Float
+  id       String @id @default(uuid())
+  fullName String
+  nic      String @unique
+
+  category WorkerCategory
+  trade    SkillTrade
+
+  dailyWageLKR Float
+
   epfNumber          String?
   bankAccountDetails String?
 
   attendance Attendance[]
-  payrolls   Payroll[]
+
+  payrolls Payroll[]
+
+  salaryAdvances SalaryAdvance[]
+
+  paySlips PaySlip[]
 
   @@map("workers")
 }
 
+// ATTENDANCE
 model Attendance {
-  id              String           @id @default(uuid())
-  workerId        String
-  projectId       String
-  date            DateTime         @default(now())
-  status          AttendanceStatus @default(PRESENT)
-  overtimeHours   Float            @default(0)
-  isSundayHoliday Boolean          @default(false)
+  id        String @id @default(uuid())
+  workerId  String
+  projectId String
+
+  date DateTime @default(now())
+
+  status AttendanceStatus @default(PRESENT)
+
+  overtimeHours   Float   @default(0)
+  isSundayHoliday Boolean @default(false)
 
   worker  Worker  @relation(fields: [workerId], references: [id])
   project Project @relation(fields: [projectId], references: [id])
 
+  @@unique([workerId, projectId, date])
   @@map("attendance")
 }
 
-model Payroll {
-  id                  String   @id @default(uuid())
-  workerId            String
-  monthYear           String   // e.g. "2026-06"
-  basicSalaryLKR      Float
-  overtimeLKR         Float
-  allowancesLKR       Float
-  grossPayLKR         Float
-  epfEmployeeLKR      Float    // 8%
-  epfEmployerLKR      Float    // 12%
-  etfEmployerLKR      Float    // 3%
-  payeTaxLKR          Float    // Progressive IRD Tax
-  advanceDeductionLKR Float    @default(0)
-  netPayLKR           Float
-  createdAt           DateTime @default(now())
+// SALARY ADVANCE
+model SalaryAdvance {
+  id       String @id @default(uuid())
+  workerId String
+
+  amountLKR Float
+
+  requestDate  DateTime  @default(now())
+  approvedDate DateTime?
+
+  status SalaryAdvanceStatus @default(PENDING)
+
+  reason       String?
+  payrollRunId String?
 
   worker Worker @relation(fields: [workerId], references: [id])
 
+  payrollRun PayrollRun? @relation("SalaryAdvanceRecovery", fields: [payrollRunId], references: [id])
+
+  @@map("salary_advances")
+}
+
+// PAYROLL RUN
+model PayrollRun {
+  id String @id @default(uuid())
+
+  monthYear String
+
+  status PayrollRunStatus @default(DRAFT)
+
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  processedById String?
+
+  processedBy User? @relation("PayrollProcessor", fields: [processedById], references: [id])
+
+  payrolls Payroll[]
+
+  recoveredSalaryAdvances SalaryAdvance[] @relation("SalaryAdvanceRecovery")
+
+  @@unique([monthYear])
+  @@map("payroll_runs")
+}
+
+// PAYROLL
+model Payroll {
+  id           String @id @default(uuid())
+  workerId     String
+  payrollRunId String
+
+  basicSalaryLKR Float
+  overtimeLKR    Float
+  allowancesLKR  Float
+
+  grossPayLKR Float
+
+  epfEmployeeLKR Float
+  epfEmployerLKR Float
+  etfEmployerLKR Float
+
+  payeTaxLKR Float
+
+  advanceDeductionLKR Float @default(0)
+
+  netPayLKR Float
+
+  createdAt DateTime @default(now())
+
+  worker     Worker     @relation(fields: [workerId], references: [id])
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id])
+
+  paySlip PaySlip?
+
+  @@unique([workerId, payrollRunId])
   @@map("payrolls")
+}
+
+// PAY SLIP
+model PaySlip {
+  id        String @id @default(uuid())
+  payrollId String @unique
+  workerId  String
+
+  issuedDate DateTime @default(now())
+
+  grossPayLKR   Float
+  deductionsLKR Float
+  netPayLKR     Float
+
+  payroll Payroll @relation(fields: [payrollId], references: [id])
+  worker  Worker  @relation(fields: [workerId], references: [id])
+
+  @@map("pay_slips")
 }

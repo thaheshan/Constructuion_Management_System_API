@@ -50,6 +50,16 @@ async function main() {
     },
   });
 
+  const client =
+    (await prisma.client.findFirst({
+      where: { name: 'Road Development Authority Sri Lanka' },
+    })) ??
+    (await prisma.client.create({
+      data: {
+        name: 'Road Development Authority Sri Lanka',
+      },
+    }));
+
   // Seed Project
   await prisma.project.upsert({
     where: { refNumber: 'CMS-PRJ-2026-001' },
@@ -57,7 +67,7 @@ async function main() {
     create: {
       name: 'Galle Highway Extension',
       refNumber: 'CMS-PRJ-2026-001',
-      clientName: 'Road Development Authority Sri Lanka',
+      clientId: client.id,
       siteAddress: 'Galle Highway Sector 4, Galle',
       contractValueLKR: 120000000,
       startDate: new Date('2026-01-15'),
