@@ -6,7 +6,13 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding Sri Lanka Construction Management System Database...');
 
-  const passwordHash = await bcrypt.hash('OwnerPassword123!', 10);
+  const password = process.env.SEED_USER_PASSWORD;
+
+  if (!password) {
+    throw new Error('SEED_USER_PASSWORD is required for seeding');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
 
   // Seed Owner
   const owner = await prisma.user.upsert({
@@ -50,6 +56,16 @@ async function main() {
     },
   });
 
+  const client =
+    (await prisma.client.findFirst({
+      where: { name: 'Road Development Authority Sri Lanka' },
+    })) ??
+    (await prisma.client.create({
+      data: {
+        name: 'Road Development Authority Sri Lanka',
+      },
+    }));
+
   // Seed Project
   await prisma.project.upsert({
     where: { refNumber: 'CMS-PRJ-2026-001' },
@@ -57,7 +73,7 @@ async function main() {
     create: {
       name: 'Galle Highway Extension',
       refNumber: 'CMS-PRJ-2026-001',
-      clientName: 'Road Development Authority Sri Lanka',
+      clientId: client.id,
       siteAddress: 'Galle Highway Sector 4, Galle',
       contractValueLKR: 120000000,
       startDate: new Date('2026-01-15'),
