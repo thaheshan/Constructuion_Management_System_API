@@ -155,7 +155,7 @@ model Project {
   clientId String
 
   siteAddress          String
-  contractValueLKR     Float
+  contractValueLKR     Decimal  @db.Decimal(14, 2)
   startDate            DateTime
   targetCompletionDate DateTime
 
@@ -184,6 +184,9 @@ model Project {
 
   paymentTransactions PaymentTransaction[]
 
+  @@index([clientId])
+  @@index([pmId])
+  @@index([supervisorId])
   @@map("projects")
 }
 
@@ -207,6 +210,8 @@ model ProjectTask {
   project    Project @relation(fields: [projectId], references: [id])
   assignedTo User?   @relation("TaskAssignee", fields: [assignedToId], references: [id])
 
+  @@index([projectId])
+  @@index([assignedToId])
   @@map("project_tasks")
 }
 
@@ -218,12 +223,14 @@ model Milestone {
 
   title                String
   targetDate           DateTime
-  completionPercentage Float    @default(0)
-  status               String   @default("PENDING")
+  completionPercentage Float      @default(0)
+  status               TaskStatus @default(PENDING)
 
   project    Project @relation(fields: [projectId], references: [id])
   assignedTo User?   @relation("MilestoneAssignee", fields: [assignedToId], references: [id])
 
+  @@index([projectId])
+  @@index([assignedToId])
   @@map("milestones")
 }
 
@@ -244,6 +251,8 @@ model DailySiteLog {
 
   materialUsages DailySiteLogMaterial[]
 
+  @@index([projectId])
+  @@index([submittedById])
   @@map("daily_site_logs")
 }
 
@@ -260,6 +269,7 @@ model DailySiteLogMaterial {
   material     MaterialItem @relation(fields: [materialId], references: [id])
 
   @@unique([dailySiteLogId, materialId])
+  @@index([materialId])
   @@map("daily_site_log_materials")
 }
 
@@ -274,8 +284,8 @@ model MaterialItem {
   currentStock  Float @default(0)
   minStockLevel Float @default(10)
 
-  lastPurchasePriceLKR Float
-  avgCostLKR           Float
+  lastPurchasePriceLKR Decimal @db.Decimal(14, 2)
+  avgCostLKR           Decimal @db.Decimal(14, 2)
 
   poItems PurchaseOrderItem[]
 
@@ -296,7 +306,7 @@ model PurchaseOrder {
   requesterId      String?
   approvedByUserId String?
 
-  totalAmountLKR Float
+  totalAmountLKR Decimal  @db.Decimal(14, 2)
   status         POStatus @default(DRAFT)
 
   createdAt DateTime @default(now())
@@ -309,6 +319,9 @@ model PurchaseOrder {
 
   items PurchaseOrderItem[]
 
+  @@index([projectId])
+  @@index([requesterId])
+  @@index([approvedByUserId])
   @@map("purchase_orders")
 }
 
@@ -319,11 +332,13 @@ model PurchaseOrderItem {
   materialId String
 
   quantity     Float
-  unitPriceLKR Float
+  unitPriceLKR Decimal @db.Decimal(14, 2)
 
   po       PurchaseOrder @relation(fields: [poId], references: [id])
   material MaterialItem  @relation(fields: [materialId], references: [id])
 
+  @@index([poId])
+  @@index([materialId])
   @@map("purchase_order_items")
 }
 
@@ -336,7 +351,7 @@ model CostCode {
   name        String
   description String?
 
-  budgetLKR Float?
+  budgetLKR Decimal? @db.Decimal(14, 2)
 
   createdAt DateTime @default(now())
 
@@ -359,7 +374,7 @@ model PaymentTransaction {
 
   transactionType PaymentTransactionType
 
-  amountLKR       Float
+  amountLKR       Decimal  @db.Decimal(14, 2)
   transactionDate DateTime
 
   description String?
@@ -369,6 +384,8 @@ model PaymentTransaction {
   project  Project   @relation(fields: [projectId], references: [id])
   costCode CostCode? @relation(fields: [costCodeId], references: [id])
 
+  @@index([projectId])
+  @@index([costCodeId])
   @@map("payment_transactions")
 }
 
@@ -381,7 +398,7 @@ model Worker {
   category WorkerCategory
   trade    SkillTrade
 
-  dailyWageLKR Float
+  dailyWageLKR Decimal @db.Decimal(14, 2)
 
   epfNumber          String?
   bankAccountDetails String?
@@ -403,7 +420,7 @@ model Attendance {
   workerId  String
   projectId String
 
-  date DateTime @default(now())
+  date DateTime @default(now()) @db.Date
 
   status AttendanceStatus @default(PRESENT)
 
@@ -414,6 +431,7 @@ model Attendance {
   project Project @relation(fields: [projectId], references: [id])
 
   @@unique([workerId, projectId, date])
+  @@index([projectId])
   @@map("attendance")
 }
 
@@ -422,7 +440,7 @@ model SalaryAdvance {
   id       String @id @default(uuid())
   workerId String
 
-  amountLKR Float
+  amountLKR Decimal @db.Decimal(14, 2)
 
   requestDate  DateTime  @default(now())
   approvedDate DateTime?
@@ -436,6 +454,8 @@ model SalaryAdvance {
 
   payrollRun PayrollRun? @relation("SalaryAdvanceRecovery", fields: [payrollRunId], references: [id])
 
+  @@index([workerId])
+  @@index([payrollRunId])
   @@map("salary_advances")
 }
 
@@ -459,6 +479,7 @@ model PayrollRun {
   recoveredSalaryAdvances SalaryAdvance[] @relation("SalaryAdvanceRecovery")
 
   @@unique([monthYear])
+  @@index([processedById])
   @@map("payroll_runs")
 }
 
@@ -468,21 +489,21 @@ model Payroll {
   workerId     String
   payrollRunId String
 
-  basicSalaryLKR Float
-  overtimeLKR    Float
-  allowancesLKR  Float
+  basicSalaryLKR Decimal @db.Decimal(14, 2)
+  overtimeLKR    Decimal @db.Decimal(14, 2)
+  allowancesLKR  Decimal @db.Decimal(14, 2)
 
-  grossPayLKR Float
+  grossPayLKR Decimal @db.Decimal(14, 2)
 
-  epfEmployeeLKR Float
-  epfEmployerLKR Float
-  etfEmployerLKR Float
+  epfEmployeeLKR Decimal @db.Decimal(14, 2)
+  epfEmployerLKR Decimal @db.Decimal(14, 2)
+  etfEmployerLKR Decimal @db.Decimal(14, 2)
 
-  payeTaxLKR Float
+  payeTaxLKR Decimal @db.Decimal(14, 2)
 
-  advanceDeductionLKR Float @default(0)
+  advanceDeductionLKR Decimal @default(0) @db.Decimal(14, 2)
 
-  netPayLKR Float
+  netPayLKR Decimal @db.Decimal(14, 2)
 
   createdAt DateTime @default(now())
 
@@ -492,6 +513,7 @@ model Payroll {
   paySlip PaySlip?
 
   @@unique([workerId, payrollRunId])
+  @@index([payrollRunId])
   @@map("payrolls")
 }
 
@@ -503,12 +525,13 @@ model PaySlip {
 
   issuedDate DateTime @default(now())
 
-  grossPayLKR   Float
-  deductionsLKR Float
-  netPayLKR     Float
+  grossPayLKR   Decimal @db.Decimal(14, 2)
+  deductionsLKR Decimal @db.Decimal(14, 2)
+  netPayLKR     Decimal @db.Decimal(14, 2)
 
   payroll Payroll @relation(fields: [payrollId], references: [id])
   worker  Worker  @relation(fields: [workerId], references: [id])
 
+  @@index([workerId])
   @@map("pay_slips")
 }

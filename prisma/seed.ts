@@ -6,7 +6,13 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding Sri Lanka Construction Management System Database...');
 
-  const passwordHash = await bcrypt.hash('OwnerPassword123!', 10);
+  const password = process.env.SEED_USER_PASSWORD;
+
+  if (!password) {
+    throw new Error('SEED_USER_PASSWORD is required for seeding');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
 
   // Seed Owner
   const owner = await prisma.user.upsert({
