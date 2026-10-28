@@ -105,15 +105,19 @@ enum PayrollRunStatus {
 
 // USER
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  role         Role
-  phone        String
-  nic          String   @unique
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String         @id @default(uuid())
+  email               String         @unique
+  passwordHash        String
+  fullName            String
+  role                Role
+  phone               String         @unique
+  nic                 String         @unique
+  failedLoginAttempts Int            @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  refreshTokens       RefreshToken[]
 
   pmProjects         Project[] @relation("ProjectPM")
   supervisorProjects Project[] @relation("ProjectSupervisor")
@@ -129,6 +133,26 @@ model User {
   processedPayrollRuns PayrollRun[] @relation("PayrollProcessor")
 
   @@map("users")
+}
+
+// REFRESH TOKEN
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  isRevoked Boolean  @default(false)
+  expiresAt DateTime
+
+  userAgent String?
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 // CLIENT

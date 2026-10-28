@@ -8,7 +8,7 @@ export class TaxComplianceService {
 
   async generateEmergencyIRDReport() {
     const projects = await this.prisma.project.findMany();
-    const totalContractValue = projects.reduce((acc, p) => acc + p.contractValueLKR, 0);
+    const totalContractValue = projects.reduce((acc, p) => acc + Number(p.contractValueLKR), 0);
     const vatCalculations = calculateVAT(totalContractValue, 0.18);
 
     return {
