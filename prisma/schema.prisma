@@ -112,12 +112,15 @@ model User {
   role                Role
   phone               String         @unique
   nic                 String         @unique
+  isMasterOwner       Boolean        @default(false)
   failedLoginAttempts Int            @default(0)
   lockedUntil         DateTime?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
   refreshTokens       RefreshToken[]
+  ownerDetail         OwnerDetail?
+  onboardingDrafts    OnboardingDraft[]
 
   pmProjects         Project[] @relation("ProjectPM")
   supervisorProjects Project[] @relation("ProjectSupervisor")
@@ -153,6 +156,40 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// OWNER DETAIL
+model OwnerDetail {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isMasterOwner    Boolean  @default(true)
+  nicName          String?
+  companyName      String?
+  designation      String?  @default("Owner")
+  emergencyContact String?
+  address          String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("owner_details")
+}
+
+// ONBOARDING DRAFT
+model OnboardingDraft {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String?
+  step      Int      @default(1)
+  data      Json
+  status    String   @default("IN_PROGRESS")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([email])
+  @@map("onboarding_drafts")
 }
 
 // CLIENT
