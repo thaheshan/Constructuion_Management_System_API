@@ -11,7 +11,9 @@
     "start:dev": "nest start --watch",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:seed": "ts-node prisma/seed.ts",
+    "test:roles": "ts-node test/roles-e2e.test.ts",
+    "test": "ts-node test/roles-e2e.test.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.8",
