@@ -1,0 +1,47 @@
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN "isMasterOwner" BOOLEAN NOT NULL DEFAULT false;
+
+-- CreateTable
+CREATE TABLE "owner_details" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "isMasterOwner" BOOLEAN NOT NULL DEFAULT true,
+    "nicName" TEXT,
+    "companyName" TEXT,
+    "designation" TEXT DEFAULT 'Owner',
+    "emergencyContact" TEXT,
+    "address" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "owner_details_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "onboarding_drafts" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT,
+    "email" TEXT,
+    "step" INTEGER NOT NULL DEFAULT 1,
+    "data" JSONB NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'IN_PROGRESS',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "onboarding_drafts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "owner_details_userId_key" ON "owner_details"("userId");
+
+-- CreateIndex
+CREATE INDEX "onboarding_drafts_userId_idx" ON "onboarding_drafts"("userId");
+
+-- CreateIndex
+CREATE INDEX "onboarding_drafts_email_idx" ON "onboarding_drafts"("email");
+
+-- AddForeignKey
+ALTER TABLE "owner_details" ADD CONSTRAINT "owner_details_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "onboarding_drafts" ADD CONSTRAINT "onboarding_drafts_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
