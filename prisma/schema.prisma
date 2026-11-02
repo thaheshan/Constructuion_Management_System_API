@@ -14,6 +14,8 @@ enum Role {
   PROJECT_MANAGER
   SITE_SUPERVISOR
   LABOUR_OFFICER
+  ARCHITECT
+  LABOURER
   ACCOUNTANT
   STORE_KEEPER
   STAFF
@@ -128,7 +130,55 @@ model User {
 
   processedPayrollRuns PayrollRun[] @relation("PayrollProcessor")
 
+  roleApprovalStatus RoleApprovalStatus @default(APPROVED)
+  userRoles          UserRole[]
+
   @@map("users")
+}
+
+// ROLES & PERMISSION SCOPES (E-08)
+enum RoleApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model RoleModel {
+  id               String     @id @default(uuid())
+  code             String     @unique
+  name             String
+  description      String
+  scope            String
+  tags             String[]   @default([])
+  requiresApproval Boolean    @default(true)
+  subRoles         String[]   @default([])
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  userRoles        UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id         String             @id @default(uuid())
+  userId     String
+  roleId     String
+  roleCode   String
+  subRole    String?
+  status     RoleApprovalStatus @default(PENDING)
+  approvedAt DateTime?
+  approvedBy String?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       RoleModel          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
 }
 
 // CLIENT
