@@ -40,6 +40,9 @@ describe('AuthService', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
       },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
     };
 
     jwtService = {
@@ -358,6 +361,7 @@ describe('AuthService', () => {
     it('should throw 401 if refresh token is already revoked', async () => {
       prisma.refreshToken.findUnique.mockResolvedValue({
         id: 'token-rec-2',
+        userId: baseUser.id,
         isRevoked: true,
         expiresAt: new Date(Date.now() + 100000),
         user: baseUser,

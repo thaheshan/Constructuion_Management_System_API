@@ -9,10 +9,9 @@ describe('SaveOwnerDetailsDto Validation', () => {
     phone: '0771234567',
     nic: '198512345678',
     password: 'SecurePassword123!',
-    isMasterOwner: true,
   };
 
-  it('should pass validation with valid Step 1 details and Master Owner flag', async () => {
+  it('should pass validation with valid Step 1 owner details', async () => {
     const dto = plainToInstance(SaveOwnerDetailsDto, validBasePayload);
     const errors = await validate(dto);
     expect(errors.length).toBe(0);
@@ -154,38 +153,6 @@ describe('SaveOwnerDetailsDto Validation', () => {
       expect(errors.length).toBeGreaterThan(0);
       const nicError = errors.find((e) => e.property === 'nic');
       expect(nicError).toBeDefined();
-    });
-  });
-
-  describe('Master Owner Flag', () => {
-    it('should allow boolean true or false, or default to undefined (service defaults to true)', async () => {
-      const dtoTrue = plainToInstance(SaveOwnerDetailsDto, {
-        ...validBasePayload,
-        isMasterOwner: true,
-      });
-      expect((await validate(dtoTrue)).length).toBe(0);
-
-      const dtoFalse = plainToInstance(SaveOwnerDetailsDto, {
-        ...validBasePayload,
-        isMasterOwner: false,
-      });
-      expect((await validate(dtoFalse)).length).toBe(0);
-
-      const dtoUndefined = plainToInstance(SaveOwnerDetailsDto, {
-        ...validBasePayload,
-        isMasterOwner: undefined,
-      });
-      expect((await validate(dtoUndefined)).length).toBe(0);
-    });
-
-    it('should reject non-boolean isMasterOwner', async () => {
-      const dto = plainToInstance(SaveOwnerDetailsDto, {
-        ...validBasePayload,
-        isMasterOwner: 'not-a-boolean' as any,
-      });
-      const errors = await validate(dto);
-      expect(errors.length).toBeGreaterThan(0);
-      expect(errors.find((e) => e.property === 'isMasterOwner')).toBeDefined();
     });
   });
 });

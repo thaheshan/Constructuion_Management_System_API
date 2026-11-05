@@ -2,8 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OnboardingService } from './onboarding.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import { ConflictException, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import {
+  ConflictException,
+  NotFoundException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Role, OnboardingStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 describe('OnboardingService', () => {
@@ -19,7 +24,6 @@ describe('OnboardingService', () => {
     phone: '0771234567',
     nic: '198512345678',
     password: validPassword,
-    isMasterOwner: true,
     companyName: 'Perera Builders (Pvt) Ltd',
     address: '123 Galle Road, Colombo 03',
     designation: 'Managing Director & Owner',
@@ -28,6 +32,7 @@ describe('OnboardingService', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn((callback) => callback(prisma)),
       user: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
@@ -49,6 +54,9 @@ describe('OnboardingService', () => {
         create: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+      },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
       },
     };
 
@@ -83,8 +91,9 @@ describe('OnboardingService', () => {
   });
 
   describe('saveOwnerDetails (Scenario: An Owner saves Step 1)', () => {
-    it('should successfully save Step 1 owner details and draft for a new owner with Master Owner flag', async () => {
-      prisma.user.findFirst.mockResolvedValue(null);
+    it('should successfully bootstrap initial Master Owner when no master owner exists', async () => {
+      // No existing master owner in DB
+      prisma.user.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
 
       const createdUser = {
         id: 'new-owner-uuid-1',
@@ -101,8 +110,6 @@ describe('OnboardingService', () => {
       const createdOwnerDetail = {
         id: 'owner-detail-uuid-1',
         userId: createdUser.id,
-        isMasterOwner: true,
-        nicName: baseDto.fullName,
         companyName: baseDto.companyName,
         designation: baseDto.designation,
         emergencyContact: '+94719876543',
@@ -115,7 +122,7 @@ describe('OnboardingService', () => {
         userId: createdUser.id,
         email: createdUser.email,
         step: 1,
-        status: 'IN_PROGRESS',
+        status: OnboardingStatus.IN_PROGRESS,
         data: {
           step: 1,
           fullName: baseDto.fullName,
@@ -135,10 +142,9 @@ describe('OnboardingService', () => {
 
       expect(result.success).toBe(true);
       expect(result.step).toBe(1);
-      expect(result.status).toBe('IN_PROGRESS');
+      expect(result.status).toBe(OnboardingStatus.IN_PROGRESS);
       expect(result.owner.isMasterOwner).toBe(true);
       expect(result.owner.role).toBe(Role.OWNER);
-      expect(result.ownerDetail.isMasterOwner).toBe(true);
       expect(result.tokens.accessToken).toBe('mocked-onboarding-jwt-token');
 
       // Verify User was created with isMasterOwner: true
@@ -154,123 +160,94 @@ describe('OnboardingService', () => {
         }),
       );
 
-      // Verify OwnerDetail was upserted with Master Owner flag
-      expect(prisma.ownerDetail.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { userId: createdUser.id },
-          create: expect.objectContaining({
-            isMasterOwner: true,
-            nicName: baseDto.fullName,
-          }),
-        }),
-      );
-
-      // Verify OnboardingDraft was created
-      expect(prisma.onboardingDraft.create).toHaveBeenCalledWith(
+      // Verify audit log recorded
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            userId: createdUser.id,
-            step: 1,
-            status: 'IN_PROGRESS',
+            action: 'OWNER_CREATED',
+            resource: 'onboarding',
           }),
         }),
       );
     });
 
-    it('should allow setting isMasterOwner to false if explicitly provided', async () => {
-      prisma.user.findFirst.mockResolvedValue(null);
-
-      const createdUser = {
-        id: 'owner-partner-uuid',
-        fullName: 'Nimal Silva',
-        email: 'nimal@construction.lk',
-        phone: '+94772223344',
-        nic: '199012345678',
-        role: Role.OWNER,
-        isMasterOwner: false,
-      };
-      prisma.user.create.mockResolvedValue(createdUser);
-      prisma.ownerDetail.upsert.mockResolvedValue({
-        id: 'detail-2',
-        userId: createdUser.id,
-        isMasterOwner: false,
-      });
-      prisma.onboardingDraft.findFirst.mockResolvedValue(null);
-      prisma.onboardingDraft.create.mockResolvedValue({
-        id: 'draft-2',
-        step: 1,
-        status: 'IN_PROGRESS',
-        data: {},
-      });
-      prisma.refreshToken.create.mockResolvedValue({});
-
-      const result = await service.saveOwnerDetails({
-        ...baseDto,
-        email: 'nimal@construction.lk',
-        phone: '0772223344',
-        isMasterOwner: false,
-      });
-
-      expect(result.owner.isMasterOwner).toBe(false);
-      expect(prisma.user.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ isMasterOwner: false }),
-        }),
-      );
-    });
-
-    it('should throw ConflictException if user already exists without an active in-progress draft', async () => {
-      prisma.user.findFirst.mockResolvedValue({
-        id: 'existing-user-uuid',
-        email: baseDto.email.toLowerCase(),
-        phone: '+94771234567',
-        nic: baseDto.nic,
-      });
-      prisma.onboardingDraft.findFirst.mockResolvedValue(null);
-
-      await expect(service.saveOwnerDetails(baseDto)).rejects.toThrow(
-        ConflictException,
-      );
-    });
-
-    it('should update existing draft when called by an authenticated user', async () => {
-      const existingUser = {
-        id: 'auth-user-id',
-        email: 'existing@construction.lk',
-        phone: '+94771112233',
-        nic: '198011122233',
-      };
-      prisma.user.findUnique.mockResolvedValue(existingUser);
-      prisma.user.findFirst.mockResolvedValue(null); // No conflict
-      prisma.user.update.mockResolvedValue({
-        ...existingUser,
-        fullName: baseDto.fullName,
-        email: baseDto.email.toLowerCase(),
-        phone: '+94771234567',
-        nic: baseDto.nic,
-        role: Role.OWNER,
+    it('should reject unauthenticated owner creation when a Master Owner already exists', async () => {
+      // Existing master owner found
+      prisma.user.findFirst.mockResolvedValueOnce({
+        id: 'existing-master-owner-id',
+        email: 'master@construction.lk',
         isMasterOwner: true,
       });
-      prisma.ownerDetail.upsert.mockResolvedValue({ id: 'detail-1', isMasterOwner: true });
+
+      await expect(
+        service.saveOwnerDetails(baseDto, undefined),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should reject owner onboarding action by a non-Owner authenticated caller (privilege escalation prevention)', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce({ id: 'master-owner' });
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'supervisor-user-id',
+        role: Role.SITE_SUPERVISOR, // Non-owner
+      });
+
+      await expect(
+        service.saveOwnerDetails(baseDto, { userId: 'supervisor-user-id', role: 'SITE_SUPERVISOR' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should not overwrite credentials or role when an authenticated Owner updates their draft', async () => {
+      const existingOwner = {
+        id: 'auth-owner-id',
+        email: baseDto.email.toLowerCase(),
+        phone: '+94771112233',
+        nic: '198011122233',
+        passwordHash: 'original-secret-hash',
+        role: Role.OWNER,
+        isMasterOwner: true,
+      };
+
+      prisma.user.findFirst.mockResolvedValueOnce(existingOwner);
+      prisma.user.findUnique.mockResolvedValue(existingOwner);
+      prisma.ownerDetail.upsert.mockResolvedValue({ id: 'detail-1' });
       prisma.onboardingDraft.findFirst.mockResolvedValue({
-        id: 'draft-existing-1',
-        userId: existingUser.id,
+        id: 'draft-1',
+        userId: existingOwner.id,
         step: 1,
-        status: 'IN_PROGRESS',
+        status: OnboardingStatus.IN_PROGRESS,
       });
       prisma.onboardingDraft.update.mockResolvedValue({
-        id: 'draft-existing-1',
+        id: 'draft-1',
         step: 1,
-        status: 'IN_PROGRESS',
+        status: OnboardingStatus.IN_PROGRESS,
         data: {},
       });
       prisma.refreshToken.create.mockResolvedValue({});
 
-      const result = await service.saveOwnerDetails(baseDto, existingUser.id);
+      const result = await service.saveOwnerDetails(
+        {
+          ...baseDto,
+          password: 'AttemptedNewPassword123!', // Should NOT overwrite credentials
+        },
+        { userId: existingOwner.id, role: Role.OWNER },
+      );
 
       expect(result.success).toBe(true);
-      expect(prisma.user.update).toHaveBeenCalled();
-      expect(prisma.onboardingDraft.update).toHaveBeenCalled();
+      // User update should NOT have been called with new credentials
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(result.owner.role).toBe(Role.OWNER);
+      expect(result.owner.isMasterOwner).toBe(true);
+    });
+
+    it('should throw generic ConflictException if an unauthenticated registration conflicts with existing account', async () => {
+      // No master owner yet, but an existing user shares phone/email/nic
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null) // no master owner
+        .mockResolvedValueOnce({ id: 'some-user', email: baseDto.email.toLowerCase() }); // account conflict
+
+      await expect(service.saveOwnerDetails(baseDto, undefined)).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -287,7 +264,6 @@ describe('OnboardingService', () => {
         isMasterOwner: true,
         ownerDetail: {
           id: 'detail-uuid',
-          isMasterOwner: true,
           companyName: 'Perera Builders',
         },
       };
@@ -297,7 +273,7 @@ describe('OnboardingService', () => {
         id: 'draft-uuid-1',
         userId,
         step: 1,
-        status: 'IN_PROGRESS',
+        status: OnboardingStatus.IN_PROGRESS,
         data: {
           step: 1,
           fullName: 'Sunil Shantha Perera',
@@ -316,42 +292,14 @@ describe('OnboardingService', () => {
 
       expect(result.success).toBe(true);
       expect(result.step).toBe(1);
-      expect(result.status).toBe('IN_PROGRESS');
+      expect(result.status).toBe(OnboardingStatus.IN_PROGRESS);
       expect(result.owner?.fullName).toBe('Sunil Shantha Perera');
       expect(result.owner?.isMasterOwner).toBe(true);
       expect(result.draft.data).toEqual(draft.data);
     });
 
-    it('should resume progress when query identifier (email) is provided', async () => {
-      const email = 'sunil@construction.lk';
-      const user = {
-        id: 'owner-1',
-        fullName: 'Sunil Shantha Perera',
-        email,
-        phone: '+94771234567',
-        nic: '198512345678',
-        role: Role.OWNER,
-        isMasterOwner: true,
-        ownerDetail: null,
-      };
-      prisma.user.findFirst.mockResolvedValue(user);
-
-      const draft = {
-        id: 'draft-1',
-        userId: 'owner-1',
-        step: 1,
-        status: 'IN_PROGRESS',
-        data: { step: 1, email },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      prisma.onboardingDraft.findFirst.mockResolvedValue(draft);
-
-      const result = await service.getDraft(undefined, email);
-
-      expect(result.success).toBe(true);
-      expect(result.step).toBe(1);
-      expect(result.draft.id).toBe('draft-1');
+    it('should throw UnauthorizedException when authenticatedUserId is missing', async () => {
+      await expect(service.getDraft('')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw NotFoundException when no draft exists', async () => {
@@ -362,18 +310,12 @@ describe('OnboardingService', () => {
         NotFoundException,
       );
     });
-
-    it('should throw BadRequestException when neither auth user nor identifier is provided', async () => {
-      await expect(service.getDraft(undefined, undefined)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
   });
 
   describe('Full Scenario: Resume After Logout', () => {
     it('should allow owner to save draft, simulate logout, and resume draft upon re-authentication', async () => {
-      // 1. Save Step 1
-      prisma.user.findFirst.mockResolvedValue(null);
+      // 1. Initial Step 1 Save (no master owner)
+      prisma.user.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
       const ownerUser = {
         id: 'persisted-owner-uuid',
         fullName: baseDto.fullName,
@@ -388,7 +330,6 @@ describe('OnboardingService', () => {
       prisma.ownerDetail.upsert.mockResolvedValue({
         id: 'detail-id-1',
         userId: ownerUser.id,
-        isMasterOwner: true,
       });
 
       const storedDraft = {
@@ -396,7 +337,7 @@ describe('OnboardingService', () => {
         userId: ownerUser.id,
         email: ownerUser.email,
         step: 1,
-        status: 'IN_PROGRESS',
+        status: OnboardingStatus.IN_PROGRESS,
         data: {
           step: 1,
           fullName: baseDto.fullName,
@@ -417,12 +358,12 @@ describe('OnboardingService', () => {
       expect(saveResponse.success).toBe(true);
       expect(saveResponse.step).toBe(1);
 
-      // 2. Simulate Logout (session invalidated on client / refresh token revoked on backend)
+      // 2. Simulate Logout (session ended)
       // 3. User Logs Back In -> Receives new JWT token with sub: ownerUser.id
       // 4. User requests GET /onboarding/draft using authenticated token
       prisma.user.findUnique.mockResolvedValue({
         ...ownerUser,
-        ownerDetail: { id: 'detail-id-1', isMasterOwner: true },
+        ownerDetail: { id: 'detail-id-1', companyName: baseDto.companyName },
       });
       prisma.onboardingDraft.findFirst.mockResolvedValue(storedDraft);
 
@@ -430,10 +371,10 @@ describe('OnboardingService', () => {
 
       expect(resumeResponse.success).toBe(true);
       expect(resumeResponse.step).toBe(1);
-      expect(resumeResponse.status).toBe('IN_PROGRESS');
+      expect(resumeResponse.status).toBe(OnboardingStatus.IN_PROGRESS);
       expect(resumeResponse.owner?.id).toBe(ownerUser.id);
       expect(resumeResponse.owner?.isMasterOwner).toBe(true);
-      expect(resumeResponse.draft.data.companyName).toBe(baseDto.companyName);
+      expect((resumeResponse.draft.data as any)?.companyName).toBe(baseDto.companyName);
     });
   });
 });

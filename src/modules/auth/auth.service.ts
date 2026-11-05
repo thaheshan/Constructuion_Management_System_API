@@ -62,7 +62,7 @@ export class AuthService {
 
   /**
    * Authenticates user via email or mobile phone, enforces lockout on repeated failures,
-   * and issues access and refresh tokens.
+   * records audit logs, and issues access and refresh tokens.
    */
   async login(dto: LoginDto, ipAddress?: string, userAgent?: string) {
     const rawIdentifier = (dto.identifier || dto.email || dto.phone || '').trim();
@@ -144,6 +144,23 @@ export class AuthService {
       });
 
       if (newLockedUntil) {
+        // Record audit log for account lockout
+        try {
+          await this.prisma.auditLog.create({
+            data: {
+              userId: user.id,
+              action: 'ACCOUNT_LOCKED',
+              resource: 'auth',
+              ipAddress,
+              userAgent,
+              details: {
+                failedAttempts: newAttempts,
+                lockedUntil: newLockedUntil.toISOString(),
+              },
+            },
+          });
+        } catch (_) {}
+
         throw new HttpException(
           {
             statusCode: HTTP_STATUS_LOCKED,
@@ -198,6 +215,20 @@ export class AuthService {
       },
     });
 
+    // Record audit log for successful login
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'USER_LOGIN',
+          resource: 'auth',
+          ipAddress,
+          userAgent,
+          details: { email: user.email, role: user.role, rememberMe: !!dto.rememberMe },
+        },
+      });
+    } catch (_) {}
+
     return {
       accessToken,
       refreshToken: rawRefreshToken,
@@ -215,6 +246,8 @@ export class AuthService {
 
   /**
    * Rotates and issues a new access token and refresh token pair using an active refresh token.
+   * On reuse of a revoked token, all user sessions are immediately revoked (theft detection).
+   * Preserves remember-me duration across token rotations.
    */
   async refreshTokens(dto: RefreshTokenDto, ipAddress?: string, userAgent?: string) {
     const tokenHash = this.hashToken(dto.refreshToken);
@@ -229,8 +262,28 @@ export class AuthService {
     }
 
     if (tokenRecord.isRevoked) {
-      // Possible token theft / reuse scenario: revoke active sessions or deny
-      throw new UnauthorizedException('Refresh token has already been revoked');
+      // Possible token theft / reuse scenario: revoke ALL active sessions for this user
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: tokenRecord.userId, isRevoked: false },
+        data: { isRevoked: true },
+      });
+
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            userId: tokenRecord.userId,
+            action: 'TOKEN_THEFT_DETECTED',
+            resource: 'auth',
+            ipAddress,
+            userAgent,
+            details: { revokedTokenId: tokenRecord.id },
+          },
+        });
+      } catch (_) {}
+
+      throw new UnauthorizedException(
+        'Security alert: Revoked refresh token reuse detected. All active sessions have been terminated.',
+      );
     }
 
     const now = new Date();
@@ -266,12 +319,14 @@ export class AuthService {
       { expiresIn: this.ACCESS_TOKEN_EXPIRY },
     );
 
-    // Generate new rotated Refresh Token (preserve remaining duration or 7-day standard)
+    // Generate new rotated Refresh Token preserving remaining duration (retains rememberMe 30-day lifetime)
+    const remainingLifetimeMs = tokenRecord.expiresAt.getTime() - now.getTime();
+    const standardLifetimeMs = this.REFRESH_TOKEN_STANDARD_DAYS * 24 * 60 * 60 * 1000;
+    const rotatedLifetimeMs = Math.max(remainingLifetimeMs, standardLifetimeMs);
+    const newExpiresAt = new Date(Date.now() + rotatedLifetimeMs);
+
     const newRawRefreshToken = crypto.randomBytes(40).toString('hex');
     const newTokenHash = this.hashToken(newRawRefreshToken);
-    const newExpiresAt = new Date(
-      Date.now() + this.REFRESH_TOKEN_STANDARD_DAYS * 24 * 60 * 60 * 1000,
-    );
 
     await this.prisma.refreshToken.create({
       data: {

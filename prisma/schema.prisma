@@ -103,6 +103,12 @@ enum PayrollRunStatus {
   APPROVED
 }
 
+enum OnboardingStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
 // USER
 model User {
   id                  String         @id @default(uuid())
@@ -121,6 +127,7 @@ model User {
   refreshTokens       RefreshToken[]
   ownerDetail         OwnerDetail?
   onboardingDrafts    OnboardingDraft[]
+  auditLogs           AuditLog[]
 
   pmProjects         Project[] @relation("ProjectPM")
   supervisorProjects Project[] @relation("ProjectSupervisor")
@@ -163,8 +170,6 @@ model OwnerDetail {
   id               String   @id @default(uuid())
   userId           String   @unique
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  isMasterOwner    Boolean  @default(true)
-  nicName          String?
   companyName      String?
   designation      String?  @default("Owner")
   emergencyContact String?
@@ -177,19 +182,38 @@ model OwnerDetail {
 
 // ONBOARDING DRAFT
 model OnboardingDraft {
-  id        String   @id @default(uuid())
+  id        String           @id @default(uuid())
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
   email     String?
-  step      Int      @default(1)
+  step      Int              @default(1)
   data      Json
-  status    String   @default("IN_PROGRESS")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status    OnboardingStatus @default(IN_PROGRESS)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   @@index([userId])
   @@index([email])
   @@map("onboarding_drafts")
+}
+
+// AUDIT LOG
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  resource  String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
 }
 
 // CLIENT

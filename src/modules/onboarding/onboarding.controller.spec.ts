@@ -23,8 +23,8 @@ describe('OnboardingController', () => {
     },
     ownerDetail: {
       id: 'detail-uuid-1',
-      isMasterOwner: true,
-      nicName: 'Sunil Shantha Perera',
+      companyName: 'Perera Builders',
+      designation: 'Owner',
     },
     draft: {
       id: 'draft-uuid-1',
@@ -66,17 +66,16 @@ describe('OnboardingController', () => {
   });
 
   describe('POST /onboarding/owner/details', () => {
-    it('should save owner details and return 201 with draft and master owner flag', async () => {
+    it('should save owner details and return 201 with draft and server-set master owner flag', async () => {
       const dto: SaveOwnerDetailsDto = {
         fullName: 'Sunil Shantha Perera',
         email: 'sunil@construction.lk',
         phone: '0771234567',
         nic: '198512345678',
         password: 'ValidPassword123!',
-        isMasterOwner: true,
       };
 
-      const req = { user: { userId: 'owner-uuid-1' } };
+      const req = { user: { userId: 'owner-uuid-1', role: 'OWNER' } };
       const ip = '127.0.0.1';
       const userAgent = 'Mozilla/5.0';
 
@@ -85,7 +84,7 @@ describe('OnboardingController', () => {
       expect(result).toEqual(mockSaveResult);
       expect(mockService.saveOwnerDetails).toHaveBeenCalledWith(
         dto,
-        'owner-uuid-1',
+        { userId: 'owner-uuid-1', role: 'OWNER' },
         ip,
         userAgent,
       );
@@ -94,23 +93,12 @@ describe('OnboardingController', () => {
 
   describe('GET /onboarding/draft', () => {
     it('should retrieve onboarding draft for authenticated owner', async () => {
-      const req = { user: { userId: 'owner-uuid-1' } };
-      const query = {};
+      const req = { user: { userId: 'owner-uuid-1', role: 'OWNER' } };
 
-      const result = await controller.getDraft(query, req);
-
-      expect(result).toEqual(mockDraftResult);
-      expect(mockService.getDraft).toHaveBeenCalledWith('owner-uuid-1', undefined);
-    });
-
-    it('should retrieve onboarding draft by query identifier when not authenticated', async () => {
-      const req = { user: null };
-      const query = { identifier: 'sunil@construction.lk' };
-
-      const result = await controller.getDraft(query, req);
+      const result = await controller.getDraft(req);
 
       expect(result).toEqual(mockDraftResult);
-      expect(mockService.getDraft).toHaveBeenCalledWith(undefined, 'sunil@construction.lk');
+      expect(mockService.getDraft).toHaveBeenCalledWith('owner-uuid-1');
     });
   });
 });

@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsEmail,
   IsNotEmpty,
   IsOptional,
@@ -45,10 +44,6 @@ export class SaveOwnerDetailsDto {
     message: 'Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character',
   })
   password: string;
-
-  @IsOptional()
-  @IsBoolean({ message: 'isMasterOwner must be a boolean value' })
-  isMasterOwner?: boolean;
 
   @IsOptional()
   @IsString({ message: 'Company name must be a string' })
