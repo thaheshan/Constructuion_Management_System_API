@@ -5,6 +5,7 @@ import { AuditModule } from './common/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TaxComplianceModule } from './modules/tax-compliance/tax-compliance.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { RolesModule } from './modules/roles/roles.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
     AuthModule,
     TaxComplianceModule,
     OnboardingModule,
+    RolesModule,
   ],
 })
 export class AppModule {}

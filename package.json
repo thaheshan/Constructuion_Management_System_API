@@ -12,7 +12,9 @@
     "test": "jest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:seed": "ts-node prisma/seed.ts",
+    "test:roles": "ts-node test/roles-e2e.test.ts",
+    "test": "ts-node test/roles-e2e.test.ts"
   },
   "jest": {
     "moduleFileExtensions": ["js", "json", "ts"],

@@ -14,9 +14,17 @@ enum Role {
   PROJECT_MANAGER
   SITE_SUPERVISOR
   LABOUR_OFFICER
+  ARCHITECT
+  LABOURER
   ACCOUNTANT
   STORE_KEEPER
   STAFF
+}
+
+enum RoleApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum ProjectStage {
@@ -111,55 +119,57 @@ enum OnboardingStatus {
 
 // USER
 model User {
-  id                  String         @id @default(uuid())
-  email               String         @unique
+  id                  String             @id @default(uuid())
+  email               String             @unique
   passwordHash        String
   fullName            String
-  role                Role
-  phone               String         @unique
-  nic                 String         @unique
-  isMasterOwner       Boolean        @default(false)
-  failedLoginAttempts Int            @default(0)
+  role                Role               // Primary/fallback system role
+  roleApprovalStatus  RoleApprovalStatus @default(APPROVED)
+  phone               String             @unique
+  nic                 String             @unique
+  isMasterOwner       Boolean            @default(false)
+  failedLoginAttempts Int                @default(0)
   lockedUntil         DateTime?
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   refreshTokens       RefreshToken[]
   ownerDetail         OwnerDetail?
   onboardingDrafts    OnboardingDraft[]
   auditLogs           AuditLog[]
+  userRoles           UserRole[]
 
-  pmProjects         Project[] @relation("ProjectPM")
-  supervisorProjects Project[] @relation("ProjectSupervisor")
+  pmProjects          Project[]          @relation("ProjectPM")
+  supervisorProjects  Project[]          @relation("ProjectSupervisor")
 
-  assignedTasks      ProjectTask[] @relation("TaskAssignee")
-  assignedMilestones Milestone[]   @relation("MilestoneAssignee")
+  assignedTasks       ProjectTask[]      @relation("TaskAssignee")
+  assignedMilestones  Milestone[]        @relation("MilestoneAssignee")
 
-  submittedDailyLogs DailySiteLog[] @relation("DailyLogSubmitter")
+  submittedDailyLogs  DailySiteLog[]     @relation("DailyLogSubmitter")
 
-  requestedPOs PurchaseOrder[] @relation("PORequester")
-  approvedPOs  PurchaseOrder[] @relation("POApprover")
+  requestedPOs        PurchaseOrder[]    @relation("PORequester")
+  approvedPOs         PurchaseOrder[]    @relation("POApprover")
 
-  processedPayrollRuns PayrollRun[] @relation("PayrollProcessor")
+  processedPayrollRuns PayrollRun[]      @relation("PayrollProcessor")
 
   @@map("users")
 }
 
 // REFRESH TOKEN
 model RefreshToken {
-  id        String   @id @default(uuid())
-  tokenHash String   @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  isRevoked Boolean  @default(false)
-  expiresAt DateTime
+  isRevoked  Boolean  @default(false)
+  expiresAt  DateTime
 
-  userAgent String?
-  ipAddress String?
+  userAgent  String?
+  ipAddress  String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([userId])
   @@map("refresh_tokens")
@@ -208,7 +218,7 @@ model AuditLog {
   userAgent String?
   createdAt DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([action])
@@ -216,57 +226,91 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// ROLES & PERMISSION SCOPES
+model RoleModel {
+  id               String     @id @default(uuid())
+  code             String     @unique
+  name             String
+  description      String
+  scope            String
+  tags             String[]   @default([])
+  requiresApproval Boolean    @default(true)
+  subRoles         String[]   @default([])
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  userRoles        UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id         String             @id @default(uuid())
+  userId     String
+  roleId     String
+  roleCode   String
+  subRole    String?
+  status     RoleApprovalStatus @default(PENDING)
+  approvedAt DateTime?
+  approvedBy String?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       RoleModel          @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
 // CLIENT
 model Client {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
   email     String?
   phone     String?
   address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  projects Project[]
+  projects  Project[]
 
   @@map("clients")
 }
 
 // PROJECT
 model Project {
-  id        String @id @default(uuid())
-  name      String
-  refNumber String @unique
+  id                   String        @id @default(uuid())
+  name                 String
+  refNumber            String        @unique
 
-  clientId String
+  clientId             String
 
   siteAddress          String
-  contractValueLKR     Decimal  @db.Decimal(14, 2)
+  contractValueLKR     Decimal       @db.Decimal(14, 2)
   startDate            DateTime
   targetCompletionDate DateTime
 
-  stage ProjectStage @default(PLANNING)
+  stage                ProjectStage  @default(PLANNING)
 
-  pmId         String
-  supervisorId String
+  pmId                 String
+  supervisorId         String
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
-  // Relationships
-  client     Client @relation(fields: [clientId], references: [id])
-  pm         User   @relation("ProjectPM", fields: [pmId], references: [id])
-  supervisor User   @relation("ProjectSupervisor", fields: [supervisorId], references: [id])
+  client               Client        @relation(fields: [clientId], references: [id])
+  pm                   User          @relation("ProjectPM", fields: [pmId], references: [id])
+  supervisor           User          @relation("ProjectSupervisor", fields: [supervisorId], references: [id])
 
-  milestones Milestone[]
-  tasks      ProjectTask[]
-  dailyLogs  DailySiteLog[]
-
-  purchaseOrders PurchaseOrder[]
-
-  attendance Attendance[]
-
-  costCodes CostCode[]
-
+  milestones           Milestone[]
+  tasks                ProjectTask[]
+  dailyLogs            DailySiteLog[]
+  purchaseOrders       PurchaseOrder[]
+  attendance           Attendance[]
+  costCodes            CostCode[]
   paymentTransactions PaymentTransaction[]
 
   @@index([clientId])
@@ -277,23 +321,23 @@ model Project {
 
 // PROJECT TASK
 model ProjectTask {
-  id           String  @id @default(uuid())
+  id           String      @id @default(uuid())
   projectId    String
   assignedToId String?
 
-  title       String
-  description String?
-  status      TaskStatus @default(PENDING)
+  title        String
+  description  String?
+  status       TaskStatus  @default(PENDING)
 
-  startDate   DateTime?
-  dueDate     DateTime?
-  completedAt DateTime?
+  startDate    DateTime?
+  dueDate      DateTime?
+  completedAt  DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  project    Project @relation(fields: [projectId], references: [id])
-  assignedTo User?   @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  project      Project     @relation(fields: [projectId], references: [id])
+  assignedTo   User?       @relation("TaskAssignee", fields: [assignedToId], references: [id])
 
   @@index([projectId])
   @@index([assignedToId])
@@ -302,17 +346,17 @@ model ProjectTask {
 
 // MILESTONE
 model Milestone {
-  id           String  @id @default(uuid())
-  projectId    String
-  assignedToId String?
+  id                   String      @id @default(uuid())
+  projectId            String
+  assignedToId         String?
 
   title                String
   targetDate           DateTime
-  completionPercentage Float      @default(0)
-  status               TaskStatus @default(PENDING)
+  completionPercentage Float       @default(0)
+  status               TaskStatus  @default(PENDING)
 
-  project    Project @relation(fields: [projectId], references: [id])
-  assignedTo User?   @relation("MilestoneAssignee", fields: [assignedToId], references: [id])
+  project              Project     @relation(fields: [projectId], references: [id])
+  assignedTo           User?       @relation("MilestoneAssignee", fields: [assignedToId], references: [id])
 
   @@index([projectId])
   @@index([assignedToId])
@@ -321,20 +365,20 @@ model Milestone {
 
 // DAILY SITE LOG
 model DailySiteLog {
-  id            String  @id @default(uuid())
-  projectId     String
-  submittedById String?
+  id                String                 @id @default(uuid())
+  projectId         String
+  submittedById     String?
 
-  date              DateTime @default(now())
+  date              DateTime               @default(now())
   weatherConditions String
   labourCount       Int
   workCompleted     String
   issuesEncountered String?
 
-  project     Project @relation(fields: [projectId], references: [id])
-  submittedBy User?   @relation("DailyLogSubmitter", fields: [submittedById], references: [id])
+  project           Project                @relation(fields: [projectId], references: [id])
+  submittedBy       User?                  @relation("DailyLogSubmitter", fields: [submittedById], references: [id])
 
-  materialUsages DailySiteLogMaterial[]
+  materialUsages    DailySiteLogMaterial[]
 
   @@index([projectId])
   @@index([submittedById])
@@ -343,15 +387,15 @@ model DailySiteLog {
 
 // DAILY SITE LOG - MATERIAL USAGE
 model DailySiteLogMaterial {
-  id             String @id @default(uuid())
+  id             String       @id @default(uuid())
   dailySiteLogId String
   materialId     String
 
-  quantity      Float
-  unitOfMeasure String?
+  quantity       Float
+  unitOfMeasure  String?
 
-  dailySiteLog DailySiteLog @relation(fields: [dailySiteLogId], references: [id])
-  material     MaterialItem @relation(fields: [materialId], references: [id])
+  dailySiteLog   DailySiteLog @relation(fields: [dailySiteLogId], references: [id])
+  material       MaterialItem @relation(fields: [materialId], references: [id])
 
   @@unique([dailySiteLogId, materialId])
   @@index([materialId])
@@ -360,49 +404,45 @@ model DailySiteLogMaterial {
 
 // MATERIAL ITEM
 model MaterialItem {
-  id            String           @id @default(uuid())
-  sku           String           @unique
-  name          String
-  category      MaterialCategory
-  unitOfMeasure String
+  id                   String                 @id @default(uuid())
+  sku                  String                 @unique
+  name                 String
+  category             MaterialCategory
+  unitOfMeasure        String
 
-  currentStock  Float @default(0)
-  minStockLevel Float @default(10)
+  currentStock         Float                  @default(0)
+  minStockLevel        Float                  @default(10)
 
-  lastPurchasePriceLKR Decimal @db.Decimal(14, 2)
-  avgCostLKR           Decimal @db.Decimal(14, 2)
+  lastPurchasePriceLKR Decimal                @db.Decimal(14, 2)
+  avgCostLKR           Decimal                @db.Decimal(14, 2)
 
-  poItems PurchaseOrderItem[]
-
-  dailySiteLogUsages DailySiteLogMaterial[]
+  poItems              PurchaseOrderItem[]
+  dailySiteLogUsages   DailySiteLogMaterial[]
 
   @@map("material_items")
 }
 
 // PURCHASE ORDER
 model PurchaseOrder {
-  id       String @id @default(uuid())
-  poNumber String @unique
+  id               String              @id @default(uuid())
+  poNumber         String              @unique
 
-  supplierName String
-
-  projectId String
+  supplierName     String
+  projectId        String
 
   requesterId      String?
   approvedByUserId String?
 
-  totalAmountLKR Decimal  @db.Decimal(14, 2)
-  status         POStatus @default(DRAFT)
+  totalAmountLKR   Decimal             @db.Decimal(14, 2)
+  status           POStatus            @default(DRAFT)
 
-  createdAt DateTime @default(now())
+  createdAt        DateTime            @default(now())
 
-  project Project @relation(fields: [projectId], references: [id])
+  project          Project             @relation(fields: [projectId], references: [id])
+  requester        User?               @relation("PORequester", fields: [requesterId], references: [id])
+  approver         User?               @relation("POApprover", fields: [approvedByUserId], references: [id])
 
-  requester User? @relation("PORequester", fields: [requesterId], references: [id])
-
-  approver User? @relation("POApprover", fields: [approvedByUserId], references: [id])
-
-  items PurchaseOrderItem[]
+  items            PurchaseOrderItem[]
 
   @@index([projectId])
   @@index([requesterId])
@@ -412,15 +452,15 @@ model PurchaseOrder {
 
 // PURCHASE ORDER ITEM
 model PurchaseOrderItem {
-  id         String @id @default(uuid())
-  poId       String
-  materialId String
+  id           String       @id @default(uuid())
+  poId         String
+  materialId   String
 
   quantity     Float
-  unitPriceLKR Decimal @db.Decimal(14, 2)
+  unitPriceLKR Decimal      @db.Decimal(14, 2)
 
-  po       PurchaseOrder @relation(fields: [poId], references: [id])
-  material MaterialItem  @relation(fields: [materialId], references: [id])
+  po           PurchaseOrder @relation(fields: [poId], references: [id])
+  material     MaterialItem  @relation(fields: [materialId], references: [id])
 
   @@index([poId])
   @@index([materialId])
@@ -429,19 +469,18 @@ model PurchaseOrderItem {
 
 // COST CODE
 model CostCode {
-  id        String @id @default(uuid())
-  projectId String
+  id                  String               @id @default(uuid())
+  projectId           String
 
-  code        String
-  name        String
-  description String?
+  code                String
+  name                String
+  description         String?
 
-  budgetLKR Decimal? @db.Decimal(14, 2)
+  budgetLKR           Decimal?             @db.Decimal(14, 2)
 
-  createdAt DateTime @default(now())
+  createdAt           DateTime             @default(now())
 
-  project Project @relation(fields: [projectId], references: [id])
-
+  project             Project              @relation(fields: [projectId], references: [id])
   paymentTransactions PaymentTransaction[]
 
   @@unique([projectId, code])
@@ -450,24 +489,21 @@ model CostCode {
 
 // PAYMENT TRANSACTION
 model PaymentTransaction {
-  id String @id @default(uuid())
+  id              String                 @id @default(uuid())
+  projectId       String
+  costCodeId      String?
 
-  projectId  String
-  costCodeId String?
-
-  transactionNo String? @unique
-
+  transactionNo   String?                @unique
   transactionType PaymentTransactionType
 
-  amountLKR       Decimal  @db.Decimal(14, 2)
+  amountLKR       Decimal                @db.Decimal(14, 2)
   transactionDate DateTime
 
-  description String?
+  description     String?
+  createdAt       DateTime               @default(now())
 
-  createdAt DateTime @default(now())
-
-  project  Project   @relation(fields: [projectId], references: [id])
-  costCode CostCode? @relation(fields: [costCodeId], references: [id])
+  project         Project                @relation(fields: [projectId], references: [id])
+  costCode        CostCode?              @relation(fields: [costCodeId], references: [id])
 
   @@index([projectId])
   @@index([costCodeId])
@@ -476,44 +512,40 @@ model PaymentTransaction {
 
 // WORKER
 model Worker {
-  id       String @id @default(uuid())
-  fullName String
-  nic      String @unique
+  id                 String          @id @default(uuid())
+  fullName           String
+  nic                String          @unique
 
-  category WorkerCategory
-  trade    SkillTrade
+  category           WorkerCategory
+  trade              SkillTrade
 
-  dailyWageLKR Decimal @db.Decimal(14, 2)
+  dailyWageLKR       Decimal         @db.Decimal(14, 2)
 
   epfNumber          String?
   bankAccountDetails String?
 
-  attendance Attendance[]
-
-  payrolls Payroll[]
-
-  salaryAdvances SalaryAdvance[]
-
-  paySlips PaySlip[]
+  attendance         Attendance[]
+  payrolls           Payroll[]
+  salaryAdvances     SalaryAdvance[]
+  paySlips           PaySlip[]
 
   @@map("workers")
 }
 
 // ATTENDANCE
 model Attendance {
-  id        String @id @default(uuid())
-  workerId  String
-  projectId String
+  id              String           @id @default(uuid())
+  workerId        String
+  projectId       String
 
-  date DateTime @default(now()) @db.Date
+  date            DateTime         @default(now()) @db.Date
+  status          AttendanceStatus @default(PRESENT)
 
-  status AttendanceStatus @default(PRESENT)
+  overtimeHours   Float            @default(0)
+  isSundayHoliday Boolean          @default(false)
 
-  overtimeHours   Float   @default(0)
-  isSundayHoliday Boolean @default(false)
-
-  worker  Worker  @relation(fields: [workerId], references: [id])
-  project Project @relation(fields: [projectId], references: [id])
+  worker          Worker           @relation(fields: [workerId], references: [id])
+  project         Project          @relation(fields: [projectId], references: [id])
 
   @@unique([workerId, projectId, date])
   @@index([projectId])
@@ -522,22 +554,19 @@ model Attendance {
 
 // SALARY ADVANCE
 model SalaryAdvance {
-  id       String @id @default(uuid())
-  workerId String
+  id           String              @id @default(uuid())
+  workerId     String
 
-  amountLKR Decimal @db.Decimal(14, 2)
-
-  requestDate  DateTime  @default(now())
+  amountLKR    Decimal             @db.Decimal(14, 2)
+  requestDate  DateTime            @default(now())
   approvedDate DateTime?
 
-  status SalaryAdvanceStatus @default(PENDING)
-
+  status       SalaryAdvanceStatus @default(PENDING)
   reason       String?
   payrollRunId String?
 
-  worker Worker @relation(fields: [workerId], references: [id])
-
-  payrollRun PayrollRun? @relation("SalaryAdvanceRecovery", fields: [payrollRunId], references: [id])
+  worker       Worker              @relation(fields: [workerId], references: [id])
+  payrollRun   PayrollRun?         @relation("SalaryAdvanceRecovery", fields: [payrollRunId], references: [id])
 
   @@index([workerId])
   @@index([payrollRunId])
@@ -546,21 +575,17 @@ model SalaryAdvance {
 
 // PAYROLL RUN
 model PayrollRun {
-  id String @id @default(uuid())
+  id                      String          @id @default(uuid())
+  monthYear               String
+  status                  PayrollRunStatus @default(DRAFT)
 
-  monthYear String
+  processedAt             DateTime?
+  createdAt               DateTime        @default(now())
 
-  status PayrollRunStatus @default(DRAFT)
+  processedById           String?
+  processedBy             User?           @relation("PayrollProcessor", fields: [processedById], references: [id])
 
-  processedAt DateTime?
-  createdAt   DateTime  @default(now())
-
-  processedById String?
-
-  processedBy User? @relation("PayrollProcessor", fields: [processedById], references: [id])
-
-  payrolls Payroll[]
-
+  payrolls                Payroll[]
   recoveredSalaryAdvances SalaryAdvance[] @relation("SalaryAdvanceRecovery")
 
   @@unique([monthYear])
@@ -570,32 +595,30 @@ model PayrollRun {
 
 // PAYROLL
 model Payroll {
-  id           String @id @default(uuid())
-  workerId     String
-  payrollRunId String
+  id                  String     @id @default(uuid())
+  workerId            String
+  payrollRunId        String
 
-  basicSalaryLKR Decimal @db.Decimal(14, 2)
-  overtimeLKR    Decimal @db.Decimal(14, 2)
-  allowancesLKR  Decimal @db.Decimal(14, 2)
+  basicSalaryLKR      Decimal    @db.Decimal(14, 2)
+  overtimeLKR         Decimal    @db.Decimal(14, 2)
+  allowancesLKR       Decimal    @db.Decimal(14, 2)
 
-  grossPayLKR Decimal @db.Decimal(14, 2)
+  grossPayLKR         Decimal    @db.Decimal(14, 2)
 
-  epfEmployeeLKR Decimal @db.Decimal(14, 2)
-  epfEmployerLKR Decimal @db.Decimal(14, 2)
-  etfEmployerLKR Decimal @db.Decimal(14, 2)
+  epfEmployeeLKR      Decimal    @db.Decimal(14, 2)
+  epfEmployerLKR      Decimal    @db.Decimal(14, 2)
+  etfEmployerLKR      Decimal    @db.Decimal(14, 2)
 
-  payeTaxLKR Decimal @db.Decimal(14, 2)
+  payeTaxLKR          Decimal    @db.Decimal(14, 2)
+  advanceDeductionLKR Decimal    @default(0) @db.Decimal(14, 2)
 
-  advanceDeductionLKR Decimal @default(0) @db.Decimal(14, 2)
+  netPayLKR           Decimal    @db.Decimal(14, 2)
 
-  netPayLKR Decimal @db.Decimal(14, 2)
+  createdAt           DateTime   @default(now())
 
-  createdAt DateTime @default(now())
-
-  worker     Worker     @relation(fields: [workerId], references: [id])
-  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id])
-
-  paySlip PaySlip?
+  worker              Worker     @relation(fields: [workerId], references: [id])
+  payrollRun          PayrollRun @relation(fields: [payrollRunId], references: [id])
+  paySlip             PaySlip?
 
   @@unique([workerId, payrollRunId])
   @@index([payrollRunId])
@@ -604,18 +627,18 @@ model Payroll {
 
 // PAY SLIP
 model PaySlip {
-  id        String @id @default(uuid())
-  payrollId String @unique
-  workerId  String
+  id            String   @id @default(uuid())
+  payrollId     String   @unique
+  workerId      String
 
-  issuedDate DateTime @default(now())
+  issuedDate    DateTime @default(now())
 
-  grossPayLKR   Decimal @db.Decimal(14, 2)
-  deductionsLKR Decimal @db.Decimal(14, 2)
-  netPayLKR     Decimal @db.Decimal(14, 2)
+  grossPayLKR   Decimal  @db.Decimal(14, 2)
+  deductionsLKR Decimal  @db.Decimal(14, 2)
+  netPayLKR     Decimal  @db.Decimal(14, 2)
 
-  payroll Payroll @relation(fields: [payrollId], references: [id])
-  worker  Worker  @relation(fields: [workerId], references: [id])
+  payroll       Payroll  @relation(fields: [payrollId], references: [id])
+  worker        Worker   @relation(fields: [workerId], references: [id])
 
   @@index([workerId])
   @@map("pay_slips")
